@@ -1,20 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, ActivityIndicator,
+  StyleSheet, ActivityIndicator, Switch, Share, Alert, Image,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-
 import { useApp } from '../context/AppContext';
-import {
-  getHabitById,
-  deleteHabit,
-  toggleHabitLog,
-  isHabitDoneToday,
-  getCurrentStreak,
-  getCompletedDaysCount,
-} from '../database/db';
-
+import { useHabitDetailViewModel } from '../viewmodels/useHabitDetailViewModel';
 
 const InfoRow = ({ label, value, theme }) => (
   <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
@@ -23,121 +13,48 @@ const InfoRow = ({ label, value, theme }) => (
   </View>
 );
 
-
 const ProgressCircle = ({ percent, color, theme }) => {
   const clamped = Math.min(Math.round(percent), 100);
   return (
     <View style={styles.progressCircleWrapper}>
       <View style={[styles.progressCircleOuter, { borderColor: theme.border }]}>
         <View style={[styles.progressCircleInner, { borderColor: color }]}>
-          <Text style={[styles.progressPercent, { color }]}>{clamped}%</Text>
-          <Text style={[styles.progressLabel, { color: theme.textSecondary }]}>
-            прогресс
-          </Text>
+          <Text style={[styles.progressPercent, { color: theme.text }]}>{clamped}%</Text>
+          <Text style={[styles.progressLabel, { color: theme.textSecondary }]}>прогресс</Text>
         </View>
       </View>
     </View>
   );
 };
 
-
 export default function HabitDetailScreen({ navigation, route }) {
-  const { theme, t, formatDate, getTodayString } = useApp();
+  const { theme, t } = useApp();
   const { habitId } = route.params;
 
-  const [habit, setHabit]         = useState(null);
-  const [doneToday, setDoneToday] = useState(false);
-  const [streak, setStreak]       = useState(0);
-  const [completed, setCompleted] = useState(0);
-  const [loading, setLoading]     = useState(true);
-  const [toggling, setToggling]   = useState(false);
+  const {
+    habit, doneToday, streak, completed,
+    loading, toggling, percent,
+    handleToggle, handleDelete, handleEdit,
+    formatDate,
+    reminderEnabled, handleToggleReminder,
+    handleCheckIn,
+  } = useHabitDetailViewModel(navigation, habitId);
 
-  const todayStr = getTodayString();
-
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [])
-  );
-
-  const loadData = async () => {
-    try {
-      const h         = await getHabitById(habitId);
-      const done      = await isHabitDoneToday(habitId, todayStr);
-      const curStreak = await getCurrentStreak(habitId);
-      const comp      = await getCompletedDaysCount(habitId);
-
-      setHabit(h);
-      setDoneToday(done);
-      setStreak(curStreak);
-      setCompleted(comp);
-
-      if (h) {
-        navigation.setOptions({ title: h.name });
-      }
-    } catch (error) {
-      console.error('loadData error:', error);
-    } finally {
-      setLoading(false);
-    }
+  const handleShare = async () => {
+    if (!habit) return;
+    const progress = habit.goal_days > 0 ? Math.round((completed / habit.goal_days) * 100) : 0;
+    await Share.share({
+      message:
+        `🎯 Я формирую привычку "${habit.name}" уже ${streak} дней подряд!\n` +
+        `📊 Прогресс: ${completed}/${habit.goal_days} дней (${progress}%)\n` +
+        `💪 Присоединяйся к Habit Tracker!`,
+    });
   };
-
-
-  const handleToggle = async () => {
-    if (toggling) return;
-    setToggling(true);
-    try {
-      await toggleHabitLog(habitId, todayStr);
-      const done      = await isHabitDoneToday(habitId, todayStr);
-      const curStreak = await getCurrentStreak(habitId);
-      const comp      = await getCompletedDaysCount(habitId);
-      setDoneToday(done);
-      setStreak(curStreak);
-      setCompleted(comp);
-    } catch (error) {
-      console.error('handleToggle error:', error);
-    } finally {
-      setToggling(false);
-    }
-  };
-
-
-  const handleDelete = () => {
-    Alert.alert(
-      t('deleteConfirm'),
-      t('deleteConfirmMessage'),
-      [
-        {
-          text: t('cancel'),
-          style: 'cancel',
-        },
-        {
-          text: t('delete'),
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteHabit(habitId);
-              navigation.goBack();
-            } catch (error) {
-              console.error('deleteHabit error:', error);
-              Alert.alert('Ошибка', 'Не удалось удалить привычку');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-
-  const handleEdit = () => {
-    navigation.navigate('AddHabit', { habitId });
-  };
-
 
   if (loading) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <ActivityIndicator color={theme.primary} size="large" />
       </View>
     );
   }
@@ -145,150 +62,132 @@ export default function HabitDetailScreen({ navigation, route }) {
   if (!habit) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <Text style={{ color: theme.textSecondary }}>Привычка не найдена</Text>
+        <Text style={{ color: theme.text }}>Привычка не найдена</Text>
       </View>
     );
   }
 
-  const percent = habit.goal_days > 0
-    ? (completed / habit.goal_days) * 100
-    : 0;
-
   return (
-    <ScrollView
-      style={{ backgroundColor: theme.background }}
-      contentContainerStyle={styles.container}
-    >
-      {}
+    <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
+
+      {/* Hero-блок */}
       <View style={[styles.hero, { backgroundColor: habit.color }]}>
         <Text style={styles.heroName}>{habit.name}</Text>
         {habit.description ? (
           <Text style={styles.heroDesc}>{habit.description}</Text>
         ) : null}
 
-        {}
+        {habit.photo_url ? (
+          <Image
+            source={{ uri: habit.photo_url }}
+            style={styles.heroImage}
+            resizeMode="cover"
+          />
+        ) : null}
+
         <View style={styles.streakBadge}>
           <Text style={styles.streakEmoji}>🔥</Text>
-          <Text style={styles.streakText}>
-            {streak} {t('streak')}
-          </Text>
+          <Text style={styles.streakText}>{streak} {t('streak')}</Text>
         </View>
       </View>
 
-      {}
+      {/* Кнопка "Выполнено" */}
       <TouchableOpacity
-        style={[
-          styles.doneButton,
-          {
-            backgroundColor: doneToday ? theme.success  : theme.primary,
-            opacity:          toggling  ? 0.7            : 1,
-          },
-        ]}
+        style={[styles.doneButton, { backgroundColor: doneToday ? theme.success : habit.color }]}
         onPress={handleToggle}
         disabled={toggling}
         activeOpacity={0.85}
       >
-        {toggling ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.doneButtonText}>
-            {doneToday ? t('alreadyDone') : t('markDone')}
-          </Text>
-        )}
+        {toggling
+          ? <ActivityIndicator color="#FFFFFF" />
+          : <Text style={styles.doneButtonText}>{doneToday ? t('alreadyDone') : t('markDone')}</Text>
+        }
       </TouchableOpacity>
 
-      {}
+      {/* Карточка прогресса */}
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.cardTitle, { color: theme.text }]}>
-          {t('progress')}
-        </Text>
-
+        <Text style={[styles.cardTitle, { color: theme.text }]}>{t('progress')}</Text>
         <ProgressCircle percent={percent} color={habit.color} theme={theme} />
-
-        {}
-        <View style={[styles.progressBarBg, { backgroundColor: theme.inputBackground }]}>
+        <View style={[styles.progressBarBg, { backgroundColor: theme.border }]}>
           <View
             style={[
               styles.progressBarFill,
-              {
-                width:           `${Math.min(percent, 100)}%`,
-                backgroundColor: habit.color,
-              },
+              { backgroundColor: habit.color, width: `${Math.min(percent, 100)}%` },
             ]}
           />
         </View>
-
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: habit.color }]}>
-              {completed}
-            </Text>
-            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
-              {t('daysCompleted')}
-            </Text>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{completed}</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{t('daysCompleted')}</Text>
           </View>
           <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
           <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: theme.text }]}>
-              {habit.goal_days}
-            </Text>
-            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
-              {t('daysTotal')}
-            </Text>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{habit.goal_days}</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{t('daysTotal')}</Text>
           </View>
           <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
           <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: theme.primary }]}>
-              {streak}
-            </Text>
-            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
-              {t('streak')}
-            </Text>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{streak}</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{t('streak')}</Text>
           </View>
         </View>
       </View>
 
-      {}
+      {/* Карточка уведомлений */}
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.cardTitle, { color: theme.text }]}>
-          Информация
-        </Text>
-        <InfoRow
-          label={t('startedOn')}
-          value={formatDate(habit.start_date)}
-          theme={theme}
-        />
-        <InfoRow
-          label={t('frequency')}
-          value={t(habit.frequency)}
-          theme={theme}
-        />
-        <InfoRow
-          label={t('goalDays')}
-          value={`${habit.goal_days} дн.`}
-          theme={theme}
-        />
+        <Text style={[styles.cardTitle, { color: theme.text }]}>🔔 Напоминание</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ color: theme.text }}>Каждый день в 09:00</Text>
+          <Switch
+            value={reminderEnabled}
+            onValueChange={handleToggleReminder}
+            trackColor={{ false: theme.border, true: habit.color }}
+            thumbColor="#FFFFFF"
+          />
+        </View>
       </View>
 
-      {}
+      {/* Карточка информации */}
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Text style={[styles.cardTitle, { color: theme.text }]}>Информация</Text>
+        <InfoRow label={t('startedOn')} value={formatDate(habit.start_date)} theme={theme} />
+        <InfoRow label={t('frequency')} value={t(habit.frequency)} theme={theme} />
+        <InfoRow label={t('goalDays')} value={`${habit.goal_days} дн.`} theme={theme} />
+      </View>
+
+      {/* Кнопки действий */}
       <View style={styles.actionsRow}>
         <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: theme.primaryLight, borderColor: theme.primary }]}
+          style={[styles.actionButton, { borderColor: theme.primary }]}
           onPress={handleEdit}
-          activeOpacity={0.8}
         >
-          <Text style={[styles.actionButtonText, { color: theme.primary }]}>
-            ✏️  {t('edit')}
-          </Text>
+          <Text style={[styles.actionButtonText, { color: theme.primary }]}>✏️ {t('edit')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: theme.danger + '18', borderColor: theme.danger }]}
-          onPress={handleDelete}
-          activeOpacity={0.8}
+          style={[styles.actionButton, { borderColor: theme.primary }]}
+          onPress={handleShare}
         >
-          <Text style={[styles.actionButtonText, { color: theme.danger }]}>
-            🗑  {t('delete')}
+          <Text style={[styles.actionButtonText, { color: theme.primary }]}>📤 Поделиться</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButton, { borderColor: theme.danger }]}
+          onPress={handleDelete}
+        >
+          <Text style={[styles.actionButtonText, { color: theme.danger }]}>🗑 {t('delete')}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Геолокация */}
+      <View style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 40 }}>
+        <TouchableOpacity
+          style={[styles.actionButton, { borderColor: theme.border, width: '100%' }]}
+          onPress={handleCheckIn}
+        >
+          <Text style={[styles.actionButtonText, { color: theme.textSecondary }]}>
+            📍 Отметить место
           </Text>
         </TouchableOpacity>
       </View>
@@ -297,34 +196,23 @@ export default function HabitDetailScreen({ navigation, route }) {
   );
 }
 
-
 const styles = StyleSheet.create({
-  container: {
-    paddingBottom: 40,
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  
-  hero: {
-    padding: 24,
-    paddingTop: 28,
-    paddingBottom: 32,
-  },
-  heroName: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 6,
-  },
+  container: { paddingBottom: 40 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  hero: { padding: 24, paddingTop: 28, paddingBottom: 32 },
+  heroName: { fontSize: 26, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 6 },
   heroDesc: {
     fontSize: 15,
     color: 'rgba(255,255,255,0.8)',
     marginBottom: 16,
     lineHeight: 22,
+  },
+  heroImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 16,
+    marginBottom: 16,
+    backgroundColor: 'rgba(0,0,0,0.1)',
   },
   streakBadge: {
     flexDirection: 'row',
@@ -337,12 +225,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   streakEmoji: { fontSize: 18 },
-  streakText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-
+  streakText: { color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
   doneButton: {
     marginHorizontal: 16,
     marginTop: -18,
@@ -355,29 +238,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
-  doneButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-
-  card: {
-    margin: 16,
-    marginBottom: 0,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 18,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-
-  progressCircleWrapper: {
-    alignItems: 'center',
-    marginBottom: 16,
-  },
+  doneButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
+  card: { margin: 16, marginBottom: 0, borderRadius: 16, borderWidth: 1, padding: 18 },
+  cardTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 16 },
+  progressCircleWrapper: { alignItems: 'center', marginBottom: 16 },
   progressCircleOuter: {
     width: 120,
     height: 120,
@@ -394,78 +258,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  progressPercent: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  progressLabel: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-
-  progressBarBg: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  statLabel: {
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-  },
-
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  infoLabel: {
-    fontSize: 14,
-  },
-  infoValue: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    margin: 16,
-    marginTop: 16,
-  },
-  actionButton: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  progressPercent: { fontSize: 24, fontWeight: 'bold' },
+  progressLabel: { fontSize: 11, marginTop: 2 },
+  progressBarBg: { height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 16 },
+  progressBarFill: { height: '100%', borderRadius: 4 },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
+  statItem: { flex: 1, alignItems: 'center', gap: 4 },
+  statNumber: { fontSize: 24, fontWeight: 'bold' },
+  statLabel: { fontSize: 11, textAlign: 'center' },
+  statDivider: { width: 1, height: 40 },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1 },
+  infoLabel: { fontSize: 14 },
+  infoValue: { fontSize: 14, fontWeight: '600' },
+  actionsRow: { flexDirection: 'row', gap: 12, margin: 16, marginTop: 16 },
+  actionButton: { flex: 1, borderWidth: 1.5, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  actionButtonText: { fontSize: 15, fontWeight: '600' },
 });

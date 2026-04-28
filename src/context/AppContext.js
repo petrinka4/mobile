@@ -2,6 +2,9 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import i18n from '../localization';
 import colors from '../theme/colors';
+import * as Network from 'expo-network';
+import { auth } from '../firebase/config';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 
 const STORAGE_KEYS = {
@@ -17,6 +20,33 @@ export const AppProvider = ({ children }) => {
   const [isDarkTheme, setIsDarkTheme] = useState(false);
   const [language, setLanguage]       = useState('ru');
   const [isReady, setIsReady]         = useState(false);
+
+  const [isOnline, setIsOnline] = useState(true);
+const [user, setUser] = useState(null);
+const [authReady, setAuthReady] = useState(false);
+
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    setUser(firebaseUser);
+    setAuthReady(true);
+  });
+  return unsubscribe;
+}, []);
+
+const logout = async () => {
+  await signOut(auth);
+};
+
+
+useEffect(() => {
+  const checkNetwork = async () => {
+    const state = await Network.getNetworkStateAsync();
+    setIsOnline(state.isConnected && state.isInternetReachable);
+  };
+  checkNetwork();
+  const interval = setInterval(checkNetwork, 10000); 
+  return () => clearInterval(interval);
+}, []);
 
   const theme = isDarkTheme ? colors.dark : colors.light;
 
@@ -149,6 +179,8 @@ export const AppProvider = ({ children }) => {
 
     
     isReady,
+    isOnline,
+    user, authReady, logout,
   };
 
   return (

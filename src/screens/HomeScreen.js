@@ -1,43 +1,38 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  StyleSheet, Alert, RefreshControl,
+  StyleSheet, RefreshControl, TextInput,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-
 import { useApp } from '../context/AppContext';
-import {
-  getAllHabits,
-  toggleHabitLog,
-  isHabitDoneToday,
-  getCurrentStreak,
-  getCompletedDaysCount,
-} from '../database/db';
+import { useHomeViewModel } from '../viewmodels/useHomeViewModel';
 import HabitCard from '../components/HabitCard';
-
+import { filterHabits } from '../utils/fuzzySearch';
 
 const EmptyList = ({ theme, t }) => (
   <View style={styles.emptyContainer}>
     <Text style={styles.emptyEmoji}>🌱</Text>
-    <Text style={[styles.emptyTitle, { color: theme.text }]}>
-      {t('noHabits')}
-    </Text>
-    <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-      {t('noHabitsSubtitle')}
-    </Text>
+    <Text style={[styles.emptyTitle,   { color: theme.text }]}>{t('noHabits')}</Text>
+    <Text style={[styles.emptySubtitle,{ color: theme.textSecondary }]}>{t('noHabitsSubtitle')}</Text>
   </View>
 );
 
+const WeatherWidget = ({ weather, theme }) => {
+  if (!weather) return null;
+  return (
+    <View style={[styles.weatherWidget, { backgroundColor: theme.primaryLight }]}>
+      <Text style={[styles.weatherText, { color: theme.primary }]}>
+        {weather.icon} {weather.city}: {weather.temp}°C, {weather.desc}
+      </Text>
+    </View>
+  );
+};
 
 const DayHeader = ({ completed, total, theme, t }) => (
   <View style={[styles.dayHeader, { backgroundColor: theme.primary }]}>
     <Text style={styles.dayHeaderTitle}>{t('todayHabits')}</Text>
-    <View style={styles.dayHeaderBadge}>
-      <Text style={styles.dayHeaderCount}>
-        {t('completedToday')}: {completed} {t('of')} {total}
-      </Text>
-    </View>
-    {}
+    <Text style={styles.dayHeaderCount}>
+      {t('completedToday')}: {completed} {t('of')} {total}
+    </Text>
     <View style={styles.progressBarBg}>
       <View
         style={[
@@ -49,73 +44,103 @@ const DayHeader = ({ completed, total, theme, t }) => (
   </View>
 );
 
-
 export default function HomeScreen({ navigation }) {
-  const { theme, t, getTodayString, formatDate } = useApp();
+  const { theme, t, isOnline } = useApp();
+  const { habits, weather, refreshing, completedToday, handleToggle, onRefresh, formatDate } =
+    useHomeViewModel();
 
-  const [habits, setHabits]       = useState([]);
-  const [todayStr]                = useState(getTodayString());
-  const [refreshing, setRefreshing] = useState(false);
+  const [query, setQuery] = useState('');
+  const [filterFrequency, setFilterFrequency] = useState('all');
+  const [sortBy, setSortBy] = useState('date');
 
-  useFocusEffect(
-    useCallback(() => {
-      loadHabits();
-    }, [])
-  );
-
-  const loadHabits = async () => {
-    try {
-      const raw = await getAllHabits();
-
-      const enriched = await Promise.all(
-        raw.map(async (habit) => {
-          const doneToday = await isHabitDoneToday(habit.id, todayStr);
-          const streak    = await getCurrentStreak(habit.id);
-          const completed = await getCompletedDaysCount(habit.id);
-          return { ...habit, doneToday, streak, completed };
-        })
-      );
-
-      setHabits(enriched);
-    } catch (error) {
-      console.error('loadHabits error:', error);
-    }
-  };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadHabits();
-    setRefreshing(false);
-  };
-
-  const handleToggle = async (habitId) => {
-    await toggleHabitLog(habitId, todayStr);
-    await loadHabits();
-  };
-
-  const completedToday = habits.filter((h) => h.doneToday).length;
+  const displayedHabits = filterHabits(habits, {
+    query,
+    frequency: filterFrequency,
+    sortBy,
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {!isOnline && (
+        <View style={[styles.offlineBanner, { backgroundColor: theme.danger }]}>
+          <Text style={styles.offlineText}>📡 Нет интернета — показаны кэшированные данные</Text>
+        </View>
+      )}
+
       <FlatList
-        data={habits}
+        data={displayedHabits}
         keyExtractor={(item) => item.id.toString()}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={theme.primary}
-          />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         ListHeaderComponent={
-          habits.length > 0
-            ? <DayHeader
-                completed={completedToday}
-                total={habits.length}
-                theme={theme}
-                t={t}
+          <>
+            <WeatherWidget weather={weather} theme={theme} />
+
+            {/* Поиск */}
+            <View style={[styles.searchBar, { backgroundColor: theme.inputBackground }]}>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="🔍 Поиск привычек..."
+                placeholderTextColor={theme.placeholder}
+                style={[styles.searchInput, { color: theme.text }]}
+                blurOnSubmit={false}
+                returnKeyType="search"
               />
-            : null
+            </View>
+
+            {/* Фильтры и сортировка */}
+            <View style={styles.filterRow}>
+              {['all', 'daily', 'weekly'].map((f) => (
+                <TouchableOpacity
+                  key={f}
+                  onPress={() => setFilterFrequency(f)}
+                  style={[
+                    styles.filterChip,
+                    filterFrequency === f && { backgroundColor: theme.primary },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: filterFrequency === f ? '#fff' : theme.textSecondary,
+                      fontSize: 12,
+                    }}
+                  >
+                    {f === 'all' ? 'Все' : f === 'daily' ? 'Ежедневно' : 'Еженедельно'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                onPress={() =>
+                  setSortBy((s) =>
+                    s === 'date'
+                      ? 'streak'
+                      : s === 'streak'
+                      ? 'progress'
+                      : s === 'progress'
+                      ? 'name'
+                      : 'date'
+                  )
+                }
+                style={[styles.filterChip, { backgroundColor: theme.primaryLight }]}
+              >
+                <Text style={{ color: theme.primary, fontSize: 12 }}>
+                  {sortBy === 'date'
+                    ? '📅 Дата'
+                    : sortBy === 'streak'
+                    ? '🔥 Стрик'
+                    : sortBy === 'progress'
+                    ? '📊 Прогресс'
+                    : '🔤 Имя'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {habits.length > 0 && (
+              <DayHeader completed={completedToday} total={habits.length} theme={theme} t={t} />
+            )}
+          </>
         }
         ListEmptyComponent={<EmptyList theme={theme} t={t} />}
         renderItem={({ item }) => (
@@ -129,13 +154,10 @@ export default function HomeScreen({ navigation }) {
           />
         )}
         contentContainerStyle={
-          habits.length === 0
-            ? styles.emptyListContent
-            : styles.listContent
+          displayedHabits.length === 0 ? styles.emptyListContent : styles.listContent
         }
       />
 
-      {}
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: theme.primary }]}
         onPress={() => navigation.navigate('AddHabit')}
@@ -147,48 +169,22 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  listContent: {
-    paddingBottom: 100,
-  },
-  emptyListContent: {
-    flexGrow: 1,
-  },
-
-  dayHeader: {
-    margin: 16,
-    borderRadius: 16,
-    padding: 20,
-  },
-  dayHeaderTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 6,
-  },
-  dayHeaderBadge: {
-    marginBottom: 12,
-  },
-  dayHeaderCount: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 14,
-  },
+  container: { flex: 1 },
+  listContent: { paddingBottom: 100 },
+  emptyListContent: { flexGrow: 1 },
+  weatherWidget: { margin: 16, marginBottom: 0, borderRadius: 12, padding: 12 },
+  weatherText: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  dayHeader: { margin: 16, borderRadius: 16, padding: 20 },
+  dayHeaderTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: 'bold', marginBottom: 6 },
+  dayHeaderCount: { color: 'rgba(255,255,255,0.85)', fontSize: 14, marginBottom: 12 },
   progressBarBg: {
     height: 6,
     backgroundColor: 'rgba(255,255,255,0.3)',
     borderRadius: 3,
     overflow: 'hidden',
   },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 3,
-  },
-
+  progressBarFill: { height: '100%', backgroundColor: '#FFFFFF', borderRadius: 3 },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -196,22 +192,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     paddingBottom: 80,
   },
-  emptyEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-
+  emptyEmoji: { fontSize: 64, marginBottom: 16 },
+  emptyTitle: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 22 },
   fab: {
     position: 'absolute',
     bottom: 24,
@@ -222,15 +205,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
   },
-  fabIcon: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    lineHeight: 32,
-    fontWeight: '300',
-  },
+  fabIcon: { color: '#FFFFFF', fontSize: 28, lineHeight: 32, fontWeight: '300' },
+  offlineBanner: { padding: 8, alignItems: 'center' },
+  offlineText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
+  searchBar: { marginHorizontal: 16, marginTop: 12, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  searchInput: { fontSize: 15 },
+  filterRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 8, gap: 8, flexWrap: 'wrap' },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: 'transparent' },
 });

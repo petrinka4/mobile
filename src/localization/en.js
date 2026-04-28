@@ -1,5 +1,5 @@
 export default {
-  // General
+  
   appName: 'Habit Tracker',
   save: 'Save',
   cancel: 'Cancel',
@@ -10,11 +10,11 @@ export default {
   no: 'No',
   ok: 'OK',
 
-  // Navigation
+  
   home: 'Home',
   settings: 'Settings',
 
-  // Home Screen
+  
   todayHabits: "Today's Habits",
   noHabits: 'No habits yet',
   noHabitsSubtitle: 'Tap + to add your first habit',
@@ -22,7 +22,7 @@ export default {
   completedToday: 'Completed today',
   of: 'of',
 
-  // Add / Edit
+  
   addHabit: 'New Habit',
   editHabit: 'Edit Habit',
   habitName: 'Name',
@@ -37,7 +37,7 @@ export default {
   weekly: 'Once a week',
   color: 'Label color',
 
-  // Validation
+  
   errorEmptyName: 'Name cannot be empty',
   errorLongName: 'Name must not exceed 50 characters',
   errorEmptyGoal: 'Please enter a goal',
@@ -46,7 +46,7 @@ export default {
   errorFutureDate: 'Date cannot be more than 1 year in the future',
   errorDuplicateName: 'A habit with this name already exists',
 
-  // Details
+  
   habitDetail: 'Habit Details',
   progress: 'Progress',
   daysCompleted: 'Days completed',
@@ -57,7 +57,7 @@ export default {
   markDone: 'Mark as done',
   alreadyDone: 'Done today ✓',
 
-  // Settings
+  
   settingsTitle: 'Settings',
   theme: 'Appearance',
   lightTheme: 'Light',

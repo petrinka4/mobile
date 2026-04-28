@@ -9,37 +9,16 @@ import * as SplashScreen from 'expo-splash-screen';
 import { AppProvider, useApp } from './src/context/AppContext';
 import { initDatabase } from './src/database/db';
 
-import HomeScreen       from './src/screens/HomeScreen';
-import AddHabitScreen   from './src/screens/AddHabitScreen';
+import HomeScreen        from './src/screens/HomeScreen';
+import AddHabitScreen    from './src/screens/AddHabitScreen';
 import HabitDetailScreen from './src/screens/HabitDetailScreen';
-import SettingsScreen   from './src/screens/SettingsScreen';
-
-
+import SettingsScreen    from './src/screens/SettingsScreen';
+import LoginScreen       from './src/screens/LoginScreen';
 
 SplashScreen.preventAutoHideAsync();
 
-
-const Stack  = createStackNavigator();
-const Tab    = createBottomTabNavigator();
-
-
-
-const TabIcon = ({ emoji, focused, color }) => (
-  <View style={{ opacity: focused ? 1 : 0.5 }}>
-    <View style={{
-      backgroundColor: focused ? color + '22' : 'transparent',
-      borderRadius: 12,
-      paddingHorizontal: 12,
-      paddingVertical: 4,
-    }}>
-      <View>
-        {}
-      </View>
-    </View>
-  </View>
-);
-
-
+const Stack = createStackNavigator();
+const Tab   = createBottomTabNavigator();
 
 const TabNavigator = () => {
   const { theme, t, isDarkTheme } = useApp();
@@ -69,30 +48,24 @@ const TabNavigator = () => {
         component={HomeScreen}
         options={{
           tabBarLabel: t('home'),
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ focused }) => (
             <View style={{
               backgroundColor: focused ? theme.primaryLight : 'transparent',
               borderRadius: 10,
               paddingHorizontal: 10,
               paddingVertical: 2,
-            }}>
-              {}
-            </View>
+            }} />
           ),
         }}
       />
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{
-          tabBarLabel: t('settings'),
-        }}
+        options={{ tabBarLabel: t('settings') }}
       />
     </Tab.Navigator>
   );
 };
-
-
 
 const RootNavigator = () => {
   const { theme, t, isDarkTheme } = useApp();
@@ -107,39 +80,29 @@ const RootNavigator = () => {
         screenOptions={{
           headerStyle: {
             backgroundColor: theme.surface,
-            shadowColor:      theme.border,
+            shadowColor: theme.border,
             elevation: 2,
           },
-          headerTintColor:       theme.primary,
+          headerTintColor: theme.primary,
           headerTitleStyle: {
-            color:      theme.text,
+            color: theme.text,
             fontWeight: 'bold',
-            fontSize:   18,
+            fontSize: 18,
           },
-          cardStyle: {
-            backgroundColor: theme.background,
-          },
+          cardStyle: { backgroundColor: theme.background },
           headerBackTitleVisible: false,
         }}
       >
-        {}
         <Stack.Screen
           name="Tabs"
           component={TabNavigator}
           options={{ headerShown: false }}
         />
-
-        {}
         <Stack.Screen
           name="AddHabit"
           component={AddHabitScreen}
-          options={{
-            title: t('addHabit'),
-            presentation: 'modal',
-          }}
+          options={{ title: t('addHabit'), presentation: 'modal' }}
         />
-
-        {}
         <Stack.Screen
           name="HabitDetail"
           component={HabitDetailScreen}
@@ -150,9 +113,8 @@ const RootNavigator = () => {
   );
 };
 
-
 const AppInit = () => {
-  const { isReady } = useApp();
+  const { isReady, authReady, user } = useApp();  
   const [dbReady, setDbReady] = useState(false);
 
   useEffect(() => {
@@ -168,21 +130,25 @@ const AppInit = () => {
     prepare();
   }, []);
 
-  const onLayoutRootView = useCallback(async () => {
-    if (isReady && dbReady) {
-      await SplashScreen.hideAsync();
+  
+  useEffect(() => {
+    if (isReady && dbReady && authReady) {
+      SplashScreen.hideAsync();
     }
-  }, [isReady, dbReady]);
+  }, [isReady, dbReady, authReady]);  
 
-  if (!isReady || !dbReady) return null;
+  if (!isReady || !dbReady || !authReady) return null;
+
+  if (!user) {
+    return <LoginScreen />;
+  }
 
   return (
-    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+    <View style={{ flex: 1 }}>
       <RootNavigator />
     </View>
   );
 };
-
 
 export default function App() {
   return (

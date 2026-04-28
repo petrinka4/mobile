@@ -1,5 +1,5 @@
 export default {
-  // Общее
+  
   appName: 'Трекер привычек',
   save: 'Сохранить',
   cancel: 'Отмена',
@@ -10,11 +10,11 @@ export default {
   no: 'Нет',
   ok: 'ОК',
 
-  // Навигация
+  
   home: 'Главная',
   settings: 'Настройки',
 
-  // Главный экран
+  
   todayHabits: 'Привычки на сегодня',
   noHabits: 'У вас пока нет привычек',
   noHabitsSubtitle: 'Нажмите + чтобы добавить первую привычку',
@@ -22,7 +22,7 @@ export default {
   completedToday: 'Выполнено сегодня',
   of: 'из',
 
-  // Добавление / Редактирование
+  
   addHabit: 'Новая привычка',
   editHabit: 'Редактировать привычку',
   habitName: 'Название',
@@ -37,7 +37,7 @@ export default {
   weekly: 'Раз в неделю',
   color: 'Цвет метки',
 
-  // Валидация
+  
   errorEmptyName: 'Название не может быть пустым',
   errorLongName: 'Название не должно превышать 50 символов',
   errorEmptyGoal: 'Укажите цель',
@@ -46,7 +46,7 @@ export default {
   errorFutureDate: 'Дата не может быть в будущем дальше 1 года',
   errorDuplicateName: 'Привычка с таким названием уже существует',
 
-  // Детали
+  
   habitDetail: 'Детали привычки',
   progress: 'Прогресс',
   daysCompleted: 'Дней выполнено',
@@ -57,7 +57,7 @@ export default {
   markDone: 'Отметить выполненной',
   alreadyDone: 'Выполнено сегодня ✓',
 
-  // Настройки
+  
   settingsTitle: 'Настройки',
   theme: 'Тема оформления',
   lightTheme: 'Светлая',
