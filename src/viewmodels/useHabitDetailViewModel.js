@@ -30,8 +30,8 @@ export function useHabitDetailViewModel(navigation, habitId) {
 
   const loadData = useCallback(async () => {
     const key = REMINDER_KEY_PREFIX + habitId;
-    console.log('=== loadData start ===');
-    console.log('habitId:', habitId, 'todayStr:', todayStr, 'reminderKey:', key);
+
+
 
     try {
       const h = await getHabitById(habitId);
@@ -43,9 +43,9 @@ export function useHabitDetailViewModel(navigation, habitId) {
       const enabled = stored === '1';
       const allKeys = await AsyncStorage.getAllKeys();
 
-      console.log('loadData: habit.name =', h?.name);
-      console.log('loadData: stored reminder value =', stored, '=> enabled =', enabled);
-      console.log('loadData: all AsyncStorage keys =', allKeys);
+
+
+
 
       setHabit(h);
       setDoneToday(done);
@@ -58,13 +58,13 @@ export function useHabitDetailViewModel(navigation, habitId) {
       console.error('loadData error:', e);
     } finally {
       setLoading(false);
-      console.log('=== loadData end, will set reminderEnabled =', enabled, '===');
+
     }
   }, [habitId, todayStr, navigation, reminderEnabled]);
 
   useFocusEffect(
     useCallback(() => {
-      console.log('useFocusEffect -> loadData() for habitId', habitId);
+
       loadData();
     }, [loadData])
   );
@@ -92,11 +92,11 @@ export function useHabitDetailViewModel(navigation, habitId) {
         text: t('delete'),
         style: 'destructive',
         onPress: async () => {
-          console.log('handleDelete: deleting habitId', habitId);
+
           await cancelHabitReminder(habitId);
           const key = REMINDER_KEY_PREFIX + habitId;
           await AsyncStorage.removeItem(key);
-          console.log('handleDelete: removed reminder key', key);
+
           await deleteHabit(habitId);
           navigation.goBack();
         },
@@ -108,7 +108,7 @@ export function useHabitDetailViewModel(navigation, habitId) {
 
   const handleToggleReminder = async (value) => {
     const key = REMINDER_KEY_PREFIX + habitId;
-    console.log('handleToggleReminder: habitId =', habitId, 'value =', value, 'prev state =', reminderEnabled);
+
 
     
     setReminderEnabled(value);
@@ -117,14 +117,14 @@ export function useHabitDetailViewModel(navigation, habitId) {
     try {
       await AsyncStorage.setItem(key, value ? '1' : '0');
       const check = await AsyncStorage.getItem(key);
-      console.log('handleToggleReminder: after setItem, stored =', check);
+
     } catch (e) {
       console.error('handleToggleReminder: AsyncStorage setItem error:', e);
     }
 
     
     const granted = await requestNotificationPermission();
-    console.log('handleToggleReminder: notification permission granted =', granted);
+
 
     if (!granted) {
       Alert.alert('Нет разрешения', 'Разрешите уведомления в настройках устройства');
@@ -132,7 +132,7 @@ export function useHabitDetailViewModel(navigation, habitId) {
       try {
         await AsyncStorage.setItem(key, '0');
         const check = await AsyncStorage.getItem(key);
-        console.log('handleToggleReminder: permission denied, set', key, 'to 0, stored =', check);
+
       } catch (e) {
         console.error('handleToggleReminder: AsyncStorage setItem(0) error:', e);
       }
@@ -142,10 +142,10 @@ export function useHabitDetailViewModel(navigation, habitId) {
     
     try {
       if (!value) {
-        console.log('handleToggleReminder: turning OFF reminder for habitId', habitId);
+
         await cancelHabitReminder(habitId);
       } else {
-        console.log('handleToggleReminder: turning ON reminder for habitId', habitId, 'habit.name =', habit?.name);
+
         await scheduleHabitReminder(habitId, habit.name, 9, 0);
         Alert.alert('✅ Готово', 'Напоминание установлено на 09:00');
       }
