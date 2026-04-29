@@ -230,15 +230,20 @@ export const getCurrentStreak = async (habitId) => {
 
     if (habitLogs.length === 0) return 0;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const toLocalDateStr = (date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
 
-    let streak    = 0;
+    const today = new Date();
+    let streak = 0;
     let checkDate = new Date(today);
-    const logSet  = new Set(habitLogs);
+    const logSet = new Set(habitLogs);
 
     while (true) {
-      const dateStr = checkDate.toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(checkDate);
       if (logSet.has(dateStr)) {
         streak++;
         checkDate.setDate(checkDate.getDate() - 1);

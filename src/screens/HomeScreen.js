@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  StyleSheet, RefreshControl, TextInput,
+  StyleSheet, RefreshControl, TextInput, ActivityIndicator,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { useHomeViewModel } from '../viewmodels/useHomeViewModel';
 import HabitCard from '../components/HabitCard';
 import { filterHabits } from '../utils/fuzzySearch';
+import { fetchWeather } from '../services/weatherService';
+
 
 const EmptyList = ({ theme, t }) => (
   <View style={styles.emptyContainer}>
@@ -16,16 +18,31 @@ const EmptyList = ({ theme, t }) => (
   </View>
 );
 
-const WeatherWidget = ({ weather, theme }) => {
-  if (!weather) return null;
-  return (
-    <View style={[styles.weatherWidget, { backgroundColor: theme.primaryLight }]}>
+
+const WeatherWidget = ({ weather, loading, onPress, theme }) => (
+  <View style={[styles.weatherWidget, { backgroundColor: theme.primaryLight }]}>
+    {weather ? (
       <Text style={[styles.weatherText, { color: theme.primary }]}>
         {weather.icon} {weather.city}: {weather.temp}°C, {weather.desc}
       </Text>
-    </View>
-  );
-};
+    ) : (
+      <Text style={[styles.weatherText, { color: theme.textSecondary }]}>
+        Погода не загружена
+      </Text>
+    )}
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={loading}
+      style={[styles.weatherButton, { backgroundColor: theme.primary }]}
+    >
+      {loading
+        ? <ActivityIndicator color="#fff" size="small" />
+        : <Text style={styles.weatherButtonText}>🌤 Узнать погоду в Минске</Text>
+      }
+    </TouchableOpacity>
+  </View>
+);
+
 
 const DayHeader = ({ completed, total, theme, t }) => (
   <View style={[styles.dayHeader, { backgroundColor: theme.primary }]}>
@@ -44,14 +61,27 @@ const DayHeader = ({ completed, total, theme, t }) => (
   </View>
 );
 
+
 export default function HomeScreen({ navigation }) {
   const { theme, t, isOnline } = useApp();
-  const { habits, weather, refreshing, completedToday, handleToggle, onRefresh, formatDate } =
+  const { habits, refreshing, completedToday, handleToggle, onRefresh, formatDate } =
     useHomeViewModel();
 
   const [query, setQuery] = useState('');
   const [filterFrequency, setFilterFrequency] = useState('all');
   const [sortBy, setSortBy] = useState('date');
+  const [weather, setWeather] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+
+  const handleFetchWeather = async () => {
+    setWeatherLoading(true);
+    try {
+      const data = await fetchWeather();
+      setWeather(data);
+    } finally {
+      setWeatherLoading(false);
+    }
+  };
 
   const displayedHabits = filterHabits(habits, {
     query,
@@ -75,9 +105,13 @@ export default function HomeScreen({ navigation }) {
         keyboardDismissMode="on-drag"
         ListHeaderComponent={
           <>
-            <WeatherWidget weather={weather} theme={theme} />
+            <WeatherWidget
+              weather={weather}
+              loading={weatherLoading}
+              onPress={handleFetchWeather}
+              theme={theme}
+            />
 
-            {/* Поиск */}
             <View style={[styles.searchBar, { backgroundColor: theme.inputBackground }]}>
               <TextInput
                 value={query}
@@ -90,7 +124,6 @@ export default function HomeScreen({ navigation }) {
               />
             </View>
 
-            {/* Фильтры и сортировка */}
             <View style={styles.filterRow}>
               {['all', 'daily', 'weekly'].map((f) => (
                 <TouchableOpacity
@@ -101,12 +134,7 @@ export default function HomeScreen({ navigation }) {
                     filterFrequency === f && { backgroundColor: theme.primary },
                   ]}
                 >
-                  <Text
-                    style={{
-                      color: filterFrequency === f ? '#fff' : theme.textSecondary,
-                      fontSize: 12,
-                    }}
-                  >
+                  <Text style={{ color: filterFrequency === f ? '#fff' : theme.textSecondary, fontSize: 12 }}>
                     {f === 'all' ? 'Все' : f === 'daily' ? 'Ежедневно' : 'Еженедельно'}
                   </Text>
                 </TouchableOpacity>
@@ -114,25 +142,13 @@ export default function HomeScreen({ navigation }) {
               <TouchableOpacity
                 onPress={() =>
                   setSortBy((s) =>
-                    s === 'date'
-                      ? 'streak'
-                      : s === 'streak'
-                      ? 'progress'
-                      : s === 'progress'
-                      ? 'name'
-                      : 'date'
+                    s === 'date' ? 'streak' : s === 'streak' ? 'progress' : s === 'progress' ? 'name' : 'date'
                   )
                 }
                 style={[styles.filterChip, { backgroundColor: theme.primaryLight }]}
               >
                 <Text style={{ color: theme.primary, fontSize: 12 }}>
-                  {sortBy === 'date'
-                    ? '📅 Дата'
-                    : sortBy === 'streak'
-                    ? '🔥 Стрик'
-                    : sortBy === 'progress'
-                    ? '📊 Прогресс'
-                    : '🔤 Имя'}
+                  {sortBy === 'date' ? '📅 Дата' : sortBy === 'streak' ? '🔥 Стрик' : sortBy === 'progress' ? '📊 Прогресс' : '🔤 Имя'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -169,43 +185,36 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   listContent: { paddingBottom: 100 },
   emptyListContent: { flexGrow: 1 },
-  weatherWidget: { margin: 16, marginBottom: 0, borderRadius: 12, padding: 12 },
+  weatherWidget: {
+    margin: 16,
+    marginBottom: 0,
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
   weatherText: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  weatherButton: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  weatherButtonText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   dayHeader: { margin: 16, borderRadius: 16, padding: 20 },
   dayHeaderTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: 'bold', marginBottom: 6 },
   dayHeaderCount: { color: 'rgba(255,255,255,0.85)', fontSize: 14, marginBottom: 12 },
-  progressBarBg: {
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
+  progressBarBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 3, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: '#FFFFFF', borderRadius: 3 },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-    paddingBottom: 80,
-  },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, paddingBottom: 80 },
   emptyEmoji: { fontSize: 64, marginBottom: 16 },
   emptyTitle: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 8 },
   emptySubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 22 },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 6,
-  },
+  fab: { position: 'absolute', bottom: 24, right: 24, width: 58, height: 58, borderRadius: 29, justifyContent: 'center', alignItems: 'center', elevation: 6 },
   fabIcon: { color: '#FFFFFF', fontSize: 28, lineHeight: 32, fontWeight: '300' },
   offlineBanner: { padding: 8, alignItems: 'center' },
   offlineText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
