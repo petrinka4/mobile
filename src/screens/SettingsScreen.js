@@ -152,7 +152,7 @@ export default function SettingsScreen() {
         </View>
       </Section>
 
-      {/* Аккаунт (Лаба 4) */}
+      
       <Section title="Аккаунт" theme={theme}>
         <View style={[styles.row, { borderBottomColor: theme.border }]}>
           <Text style={[styles.rowLabel, { color: theme.text }]}>📧 {user?.email}</Text>
@@ -162,17 +162,6 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </Section>
 
-      {/* Отладка: очистка локальных данных */}
-      <Section title="Отладка" theme={theme}>
-        <TouchableOpacity
-          style={[styles.row, { borderBottomWidth: 0 }]}
-          onPress={clearLocalData}
-        >
-          <Text style={[styles.rowLabel, { color: theme.danger }]}>
-            🧹 Очистить локальные привычки
-          </Text>
-        </TouchableOpacity>
-      </Section>
 
       <View style={[styles.decorCard, { backgroundColor: theme.primaryLight }]}>
         <Text style={styles.decorEmoji}>🎯</Text>
