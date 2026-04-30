@@ -1,274 +1,274 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db as firestore, auth } from '../firebase/config';
 import {
-  doc, setDoc, deleteDoc, serverTimestamp, getDoc,
+  collection, doc, setDoc, deleteDoc,
+  getDocs, getDoc, query, where,
+  writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 
-const HABITS_KEY = '@habits';
-const LOGS_KEY   = '@habit_logs';
+export const initDatabase = async () => true;
 
-const getUserSuffix = () => {
-  const uid = auth.currentUser?.uid;
-  return uid ? `_${uid}` : '';
+
+const uid       = () => auth.currentUser?.uid;
+const habitsRef = () => collection(firestore, 'users', uid(), 'habits');
+const logsRef   = () => collection(firestore, 'users', uid(), 'logs');
+const logDocId  = (habitId, date) => `${habitId}_${date}`;
+
+const toLocalDate = (d) => {
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 };
 
-const getHabitsKey = () => `${HABITS_KEY}${getUserSuffix()}`;
-const getLogsKey   = () => `${LOGS_KEY}${getUserSuffix()}`;
 
-const getHabits = async () => {
-  const raw = await AsyncStorage.getItem(getHabitsKey());
-  return raw ? JSON.parse(raw) : [];
+
+const cacheKey = (type) => `@${type}_cache_${uid() ?? 'guest'}`;
+
+const setCache = async (type, data) => {
+  try { await AsyncStorage.setItem(cacheKey(type), JSON.stringify(data)); } catch (_) {}
 };
 
-const saveHabits = async (habits) => {
-  await AsyncStorage.setItem(getHabitsKey(), JSON.stringify(habits));
+const getCache = async (type) => {
+  try {
+    const raw = await AsyncStorage.getItem(cacheKey(type));
+    return raw ? JSON.parse(raw) : [];
+  } catch (_) { return []; }
 };
 
-const getLogs = async () => {
-  const raw = await AsyncStorage.getItem(getLogsKey());
-  return raw ? JSON.parse(raw) : [];
-};
 
-const saveLogs = async (logs) => {
-  await AsyncStorage.setItem(getLogsKey(), JSON.stringify(logs));
-};
-
-export const initDatabase = async () => {
-  return true;
-};
 
 export const getAllHabits = async () => {
   try {
-    const habits = await getHabits();
-    return habits.sort(
-      (a, b) => new Date(b.created_at) - new Date(a.created_at)
-    );
-  } catch (error) {
-    console.error('getAllHabits error:', error);
-    return [];
+    if (!uid()) return getCache('habits');
+    const snap   = await getDocs(habitsRef());
+    const habits = snap.docs.map(d => ({ ...d.data(), id: Number(d.id) }));
+    habits.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    await setCache('habits', habits);
+    return habits;
+  } catch (err) {
+    console.warn('getAllHabits: offline, using cache');
+    return getCache('habits');
   }
 };
 
 export const getHabitById = async (id) => {
   try {
-    const userId = auth.currentUser?.uid;
-    if (userId) {
-      const ref = doc(firestore, 'users', userId, 'habits', String(id));
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        const data = snap.data();
-        return {
-          id,
-          ...data,
-        };
-      }
+    if (!uid()) {
+      const list = await getCache('habits');
+      return list.find(h => h.id === id) ?? null;
     }
-
-    const habits = await getHabits();
-    return habits.find((h) => h.id === id) ?? null;
-  } catch (error) {
-    console.error('getHabitById error:', error);
-    return null;
+    const snap = await getDoc(doc(habitsRef(), String(id)));
+    return snap.exists() ? { ...snap.data(), id: Number(snap.id) } : null;
+  } catch (err) {
+    const list = await getCache('habits');
+    return list.find(h => h.id === id) ?? null;
   }
 };
 
 export const createHabit = async (habit) => {
   try {
-    const habits  = await getHabits();
-    const newId   = Date.now();
+    const newId    = Date.now();
     const newHabit = {
-      id:                newId,
-      name:              habit.name,
-      description:       habit.description ?? '',
-      frequency:         habit.frequency,
-      goal_days:         habit.goal_days,
-      start_date:        habit.start_date,
-      color:             habit.color,
-      photo_url:         habit.photo_url ?? null,
-      reminder_enabled:  habit.reminder_enabled ?? false,
-      created_at:        new Date().toISOString(),
+      id:               newId,
+      name:             habit.name,
+      description:      habit.description ?? '',
+      frequency:        habit.frequency,
+      goal_days:        habit.goal_days,
+      start_date:       habit.start_date,
+      color:            habit.color,
+      photo_url:        habit.photo_url ?? null,
+      reminder_enabled: habit.reminder_enabled ?? false,
+      created_at:       new Date().toISOString(),
     };
-    habits.push(newHabit);
-    await saveHabits(habits);
-
-    try {
-      const userId = auth.currentUser?.uid;
-      if (userId) {
-        await setDoc(doc(firestore, 'users', userId, 'habits', String(newId)), {
-          ...newHabit,
-          synced_at: serverTimestamp(),
-        });
-      }
-    } catch (e) {
-      console.warn('Firestore createHabit sync error:', e);
+    if (uid()) {
+      await setDoc(
+        doc(habitsRef(), String(newId)),
+        { ...newHabit, synced_at: serverTimestamp() }
+      );
     }
-
+    const cached = await getCache('habits');
+    await setCache('habits', [newHabit, ...cached]);
     return newId;
-  } catch (error) {
-    console.error('createHabit error:', error);
+  } catch (err) {
+    console.error('createHabit error:', err);
     return null;
   }
 };
 
 export const updateHabit = async (id, habit) => {
   try {
-    const habits = await getHabits();
-    const index  = habits.findIndex((h) => h.id === id);
-    if (index === -1) return false;
-
-    habits[index] = {
-      ...habits[index],
-      name:              habit.name,
-      description:       habit.description ?? '',
-      frequency:         habit.frequency,
-      goal_days:         habit.goal_days,
-      start_date:        habit.start_date,
-      color:             habit.color,
-      photo_url:         habit.photo_url ?? habits[index].photo_url,
-      reminder_enabled:  typeof habit.reminder_enabled === 'boolean'
-                           ? habit.reminder_enabled
-                           : (habits[index].reminder_enabled ?? false),
+    const current = await getHabitById(id);
+    if (!current) return false;
+    const updated = {
+      ...current,
+      name:             habit.name,
+      description:      habit.description ?? '',
+      frequency:        habit.frequency,
+      goal_days:        habit.goal_days,
+      start_date:       habit.start_date,
+      color:            habit.color,
+      photo_url:        habit.photo_url ?? current.photo_url,
+      reminder_enabled: typeof habit.reminder_enabled === 'boolean'
+                          ? habit.reminder_enabled
+                          : (current.reminder_enabled ?? false),
     };
-    await saveHabits(habits);
-
-    try {
-      const userId = auth.currentUser?.uid;
-      if (userId) {
-        await setDoc(
-          doc(firestore, 'users', userId, 'habits', String(id)),
-          { ...habits[index], synced_at: serverTimestamp() },
-          { merge: true }
-        );
-      }
-    } catch (e) {
-      console.warn('Firestore updateHabit sync error:', e);
+    if (uid()) {
+      await setDoc(
+        doc(habitsRef(), String(id)),
+        { ...updated, synced_at: serverTimestamp() },
+        { merge: true }
+      );
     }
-
+    const cached = await getCache('habits');
+    const idx    = cached.findIndex(h => h.id === id);
+    if (idx !== -1) { cached[idx] = updated; await setCache('habits', cached); }
     return true;
-  } catch (error) {
-    console.error('updateHabit error:', error);
+  } catch (err) {
+    console.error('updateHabit error:', err);
     return false;
   }
 };
 
 export const deleteHabit = async (id) => {
   try {
-    const habits   = await getHabits();
-    const filtered = habits.filter((h) => h.id !== id);
-    await saveHabits(filtered);
-
-    const logs         = await getLogs();
-    const filteredLogs = logs.filter((l) => l.habit_id !== id);
-    await saveLogs(filteredLogs);
-
-    try {
-      const userId = auth.currentUser?.uid;
-      if (userId) {
-        await deleteDoc(doc(firestore, 'users', userId, 'habits', String(id)));
+    if (uid()) {
+      await deleteDoc(doc(habitsRef(), String(id)));
+      const logsSnap = await getDocs(query(logsRef(), where('habit_id', '==', id)));
+      if (!logsSnap.empty) {
+        const batch = writeBatch(firestore);
+        logsSnap.docs.forEach(d => batch.delete(d.ref));
+        await batch.commit();
       }
-    } catch (e) {
-      console.warn('Firestore deleteHabit sync error:', e);
     }
-
+    const cached     = await getCache('habits');
+    const cachedLogs = await getCache('logs');
+    await setCache('habits', cached.filter(h => h.id !== id));
+    await setCache('logs', cachedLogs.filter(l => l.habit_id !== id));
     return true;
-  } catch (error) {
-    console.error('deleteHabit error:', error);
+  } catch (err) {
+    console.error('deleteHabit error:', err);
     return false;
+  }
+};
+
+
+export const getAllLogsForUser = async () => {
+  try {
+    if (!uid()) return getCache('logs');
+    const snap = await getDocs(logsRef());
+    const logs = snap.docs.map(d => d.data());
+    await setCache('logs', logs);
+    return logs;
+  } catch (err) {
+    console.warn('getAllLogsForUser: offline, using cache');
+    return getCache('logs');
   }
 };
 
 export const toggleHabitLog = async (habitId, date) => {
   try {
-    const logs  = await getLogs();
-    const index = logs.findIndex(
-      (l) => l.habit_id === habitId && l.log_date === date
-    );
+    const logId  = logDocId(habitId, date);
+    const cached = await getCache('logs');
 
-    if (index !== -1) {
-      logs.splice(index, 1);
-      await saveLogs(logs);
-      return false;
+    if (uid()) {
+      const ref  = doc(logsRef(), logId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        await deleteDoc(ref);
+        await setCache('logs', cached.filter(
+          l => !(l.habit_id === habitId && l.log_date === date)
+        ));
+        return false;
+      } else {
+        const entry = { habit_id: habitId, log_date: date };
+        await setDoc(ref, entry);
+        await setCache('logs', [...cached, entry]);
+        return true;
+      }
     } else {
-      logs.push({ habit_id: habitId, log_date: date });
-      await saveLogs(logs);
-      return true;
+      const idx = cached.findIndex(l => l.habit_id === habitId && l.log_date === date);
+      if (idx !== -1) {
+        cached.splice(idx, 1);
+        await setCache('logs', cached);
+        return false;
+      } else {
+        cached.push({ habit_id: habitId, log_date: date });
+        await setCache('logs', cached);
+        return true;
+      }
     }
-  } catch (error) {
-    console.error('toggleHabitLog error:', error);
+  } catch (err) {
+    console.error('toggleHabitLog error:', err);
     return null;
   }
 };
 
 export const isHabitDoneToday = async (habitId, date) => {
   try {
-    const logs = await getLogs();
-    return logs.some((l) => l.habit_id === habitId && l.log_date === date);
-  } catch (error) {
-    console.error('isHabitDoneToday error:', error);
+    if (uid()) {
+      const snap = await getDoc(doc(logsRef(), logDocId(habitId, date)));
+      return snap.exists();
+    }
+    const logs = await getCache('logs');
+    return logs.some(l => l.habit_id === habitId && l.log_date === date);
+  } catch (err) {
+    console.error('isHabitDoneToday error:', err);
     return false;
   }
 };
 
 export const getCompletedDaysCount = async (habitId) => {
   try {
-    const logs = await getLogs();
-    return logs.filter((l) => l.habit_id === habitId).length;
-  } catch (error) {
-    console.error('getCompletedDaysCount error:', error);
+    if (uid()) {
+      const snap = await getDocs(query(logsRef(), where('habit_id', '==', habitId)));
+      return snap.size;
+    }
+    const logs = await getCache('logs');
+    return logs.filter(l => l.habit_id === habitId).length;
+  } catch (err) {
+    console.error('getCompletedDaysCount error:', err);
     return 0;
   }
 };
 
 export const getCurrentStreak = async (habitId) => {
   try {
-    const logs = await getLogs();
-    const habitLogs = logs
-      .filter((l) => l.habit_id === habitId)
-      .map((l) => l.log_date)
-      .sort()
-      .reverse();
+    let dates;
+    if (uid()) {
+      const snap = await getDocs(query(logsRef(), where('habit_id', '==', habitId)));
+      dates = snap.docs.map(d => d.data().log_date);
+    } else {
+      const logs = await getCache('logs');
+      dates = logs.filter(l => l.habit_id === habitId).map(l => l.log_date);
+    }
+    if (dates.length === 0) return 0;
 
-    if (habitLogs.length === 0) return 0;
-
-    const toLocalDateStr = (date) => {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    };
-
-    const today = new Date();
-    let streak = 0;
-    let checkDate = new Date(today);
-    const logSet = new Set(habitLogs);
-
+    const logSet    = new Set(dates);
+    let   streak    = 0;
+    const checkDate = new Date();
     while (true) {
-      const dateStr = toLocalDateStr(checkDate);
+      const dateStr = toLocalDate(checkDate);
       if (logSet.has(dateStr)) {
         streak++;
         checkDate.setDate(checkDate.getDate() - 1);
-      } else {
-        break;
-      }
+      } else break;
     }
-
     return streak;
-  } catch (error) {
-    console.error('getCurrentStreak error:', error);
+  } catch (err) {
+    console.error('getCurrentStreak error:', err);
     return 0;
   }
 };
 
 export const isNameDuplicate = async (name, excludeId = null) => {
   try {
-    const habits = await getHabits();
+    const habits = await getAllHabits();
     return habits.some(
-      (h) =>
-        h.name.toLowerCase().trim() === name.toLowerCase().trim() &&
-        h.id !== excludeId
+      h => h.name.toLowerCase().trim() === name.toLowerCase().trim() && h.id !== excludeId
     );
-  } catch (error) {
-    console.error('isNameDuplicate error:', error);
+  } catch (err) {
+    console.error('isNameDuplicate error:', err);
     return false;
   }
 };

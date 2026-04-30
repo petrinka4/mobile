@@ -1,63 +1,69 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import {
-  getAllHabits, toggleHabitLog, isHabitDoneToday,
-  getCurrentStreak, getCompletedDaysCount,
-} from '../database/db';
-import { fetchWeather } from '../services/weatherService';
+import { getAllHabits, getAllLogsForUser, toggleHabitLog } from '../database/db';
 import { db as firestore, auth } from '../firebase/config';
-import { collection, query, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
+
+const toLocalDate = (d) => {
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const computeStreak = (logsForHabit) => {
+  if (!logsForHabit.length) return 0;
+  const logSet    = new Set(logsForHabit);
+  let   streak    = 0;
+  const checkDate = new Date();
+  while (true) {
+    const dateStr = toLocalDate(checkDate);
+    if (logSet.has(dateStr)) {
+      streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else break;
+  }
+  return streak;
+};
+
+const enrichWithLogs = (habits, allLogs, today) =>
+  habits.map(habit => {
+    const habitLogs = allLogs
+      .filter(l => l.habit_id === habit.id)
+      .map(l => l.log_date);
+    return {
+      ...habit,
+      doneToday: habitLogs.includes(today),
+      streak:    computeStreak(habitLogs),
+      completed: habitLogs.length,
+    };
+  });
 
 export function useHomeViewModel() {
   const { getTodayString, formatDate, isOnline } = useApp();
-  const [habits, setHabits] = useState([]);
-  const [weather, setWeather] = useState(null);
+  const [habits, setHabits]       = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const todayStr = getTodayString();
 
   const loadHabits = useCallback(async () => {
-    const raw = await getAllHabits();
-    const enriched = await Promise.all(
-      raw.map(async (habit) => {
-        const doneToday = await isHabitDoneToday(habit.id, todayStr);
-        const streak = await getCurrentStreak(habit.id);
-        const completed = await getCompletedDaysCount(habit.id);
-        return { ...habit, doneToday, streak, completed };
-      })
-    );
-    setHabits(enriched);
-  }, [todayStr]);
-
-  const loadWeather = useCallback(async () => {
-    if (!isOnline) return;
-    const data = await fetchWeather();
-    setWeather(data);
-  }, [isOnline]);
+    const [raw, allLogs] = await Promise.all([
+      getAllHabits(),
+      getAllLogsForUser(),
+    ]);
+    setHabits(enrichWithLogs(raw, allLogs, getTodayString()));
+  }, [getTodayString]);
 
   
   useEffect(() => {
     const userId = auth.currentUser?.uid;
-    if (!userId) return;
+    if (!userId) { loadHabits(); return; }
 
-    const q = query(collection(firestore, 'users', userId, 'habits'));
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const firestoreHabits = snapshot.docs.map(d => ({ ...d.data(), id: Number(d.id) }));
-
-      const today = getTodayString();
-      const enriched = await Promise.all(
-        firestoreHabits.map(async (habit) => {
-          const doneToday = await isHabitDoneToday(habit.id, today);
-          const streak = await getCurrentStreak(habit.id);
-          const completed = await getCompletedDaysCount(habit.id);
-          return { ...habit, doneToday, streak, completed };
-        })
-      );
-      enriched.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      setHabits(enriched);
-    });
-
-    return () => unsubscribe();
-  }, []);
+    const unsub = onSnapshot(
+      collection(firestore, 'users', userId, 'habits'),
+      async () => { await loadHabits(); }
+    );
+    return () => unsub();
+  }, [loadHabits]);
 
   const handleToggle = async (habitId) => {
     await toggleHabitLog(habitId, todayStr);
@@ -67,11 +73,10 @@ export function useHomeViewModel() {
   const onRefresh = async () => {
     setRefreshing(true);
     await loadHabits();
-    await loadWeather();
     setRefreshing(false);
   };
 
-  const completedToday = habits.filter((h) => h.doneToday).length;
+  const completedToday = habits.filter(h => h.doneToday).length;
 
-  return { habits, weather, refreshing, completedToday, handleToggle, onRefresh, todayStr, formatDate };
+  return { habits, refreshing, completedToday, handleToggle, onRefresh, todayStr, formatDate };
 }
